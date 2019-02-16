@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>智能家居</title>
+</head>
+<body>
+<label>SSID:<input id="SSID" name="SSID"></label><br/>
+<label>PWD:<input id="PWD" name="PWD"></label><br/>
+<button class="getbtn btn">GET请求</button>
+</body>
+<script type="text/javascript">
+    //get请求
+    document.querySelector(".getbtn").onclick = function () {
+        let xmlhttp = new XMLHttpRequest();
+        let ssid = document.getElementById('SSID').value;
+        let pwd = document.getElementById('PWD').value;
+        // get方法带参数是将参数写在url里面传过去给后端
+        xmlhttp.open("GET", "/?SSID=" + ssid + "&PWD=" + pwd, true);
+        xmlhttp.setRequestHeader("SSID", ssid);
+        xmlhttp.setRequestHeader("PWD", pwd);
+        console.log(xmlhttp);
+        xmlhttp.send();
+        // readyState == 4 为请求完成，status == 200为请求陈宫返回的状态
+        xmlhttp.onreadystatechange = function () {
+            if (xmlhttp.readyState == 4 && xmlhttp.status == 200) {
+                let data = xmlhttp.responseText;
+                document.write(data);
+                console.log(data);
+            }
+        }
+    };
+
+</script>
+
+</html>
