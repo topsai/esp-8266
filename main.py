@@ -6,16 +6,148 @@
 import os
 import network
 import time
+import json
+import dht
 import machine
 from machine import Pin, Timer
 import wifi_conn as wifi_config
+from umqtt.simple import MQTTClient
+import ubinascii
+import neopixel
+from builtins import hasattr, getattr
+
+temperature_humidity = []
+# 智能灯开关对应的GPIO管脚
+LED = Pin(2, Pin.OUT, value=1)
+d = dht.DHT11(machine.Pin(4))
+# rgb灯带
+np = neopixel.NeoPixel(machine.Pin(5), 12)
+# 关灯
+last_color = (255, 255, 255)
+color = (0, 0, 0)
+for i in range(12):
+    np[i] = color
+np.write()
+
+# 每个MQTT的客户端应该使用一个唯一的client_id
+"""
+topic 命名 
+command_topic :clallback方法名+_command_topic
+state_topic : command_topic + 'State'
+"""
+
+CLIENT_ID = ubinascii.hexlify(machine.unique_id())
+command_topic = b"home-assistant/arduino1/laserLight"
+state_topic = b"home-assistant/arduino1/laserLightState"
+s = "asas"
+rgbstate_topic = b"home/rgbState"
+rgb_command_topic = b"home/rgb"
+ends = '_command_topic'
+
+# 定义于MQTT代理服务器的连接信息
+CONFIG = {
+    "broker": "10.0.0.13",
+    "mqtt_user": "homeassistant",
+    "mqtt_password": "hachina",
+    "mqtt_topic_command": b"hachina/hardware/led01/switch",
+    "mqtt_topic_commands": b"hachina/hardware/led01/state",
+    "s": b"asas",
+    "ss": b"123",
+    "dht11_state": b"home-assistant/window/contact",
+}
+
+
+class option:
+    # DHT11
+    def get_temp(self):
+        d.measure()
+        global data
+        data = b'{"temperature": "%s", "humidity": "%s"}' % (d.temperature(), d.humidity())
+        print('发布温湿度', data)
+        return data
+
+    # RGB LIGHT
+    def rgb(self, msg):
+        # msg = b'{"color": {"r": 255, "b": 236, "g": 182}, "state": "ON"}'
+        global r, g, b, last_color, color
+        msg = json.loads(msg)
+        state = msg.get("state")
+        rgb_color = msg.get("color")
+        if state == "ON":
+            print('rgb on')
+            if rgb_color:
+                color = (rgb_color['r'], rgb_color['g'], rgb_color['b'])
+                last_color = color
+            else:
+                color = last_color
+        else:
+            print('rgb off')
+            color = (0, 0, 0)
+        for i in range(12):
+            np[i] = color
+        np.write()
+
+
+opt = option()
+
+
+def sub_cb(topic, msg):
+    global c
+    print((topic, msg))
+    try:
+        # 获取方法名
+        fun = topic.decode().split('/')[-1]
+        print(fun)
+        # 获取方法
+        if hasattr(opt, fun):
+            fun = getattr(opt, fun)
+        fun(msg)
+        c.publish(topic + b"State", msg)
+    except:
+        pass
+
+
+def run_client():
+    global c
+    # 创建MQTT的客户端对象
+    c = MQTTClient(CLIENT_ID, CONFIG["broker"], user=CONFIG["mqtt_user"], password=CONFIG["mqtt_password"])
+    # 设置当订阅的信息到达时的处理函数
+    c.set_callback(sub_cb)
+    # 连接MQTT代理服务器
+    c.connect()
+    # 订阅命令信息
+    c.subscribe(command_topic)
+    c.subscribe(s)
+    c.subscribe(rgb_command_topic)
+    tim.init(period=5000, mode=Timer.PERIODIC, callback=lambda t: c.publish("office/sensor1", opt.get_temp()))
+    # c.subscribe(CONFIG["dht11_state"])
+    print("Connected to %s, subscribed to %s topic" % (CONFIG["broker"], CONFIG["mqtt_topic_command"]))
+    try:
+        while True:
+            c.wait_msg()
+    finally:
+        c.disconnect()
+
 
 net_state = False
-# 初始化LED
-led_pin = Pin(2, Pin.OUT, value=1)
+# # 初始化LED
+# led_pin = Pin(2, Pin.OUT, value=1)
 
 tim = Timer(-1)
 print("初始化")
+
+
+def mymqtt():
+    def sub_cb(topic, msg):  # 回调函数，收到服务器消息后会调用这个函数
+        print(topic, msg)
+
+    c = MQTTClient("umqtt_client", "test.mosquitto.org")  # 建立一个MQTT客户端
+    c.set_callback(sub_cb)  # 设置回调函数
+    c.connect()  # 建立连接
+    c.subscribe(b"ledctl")  # 监控ledctl这个通道，接收控制命令
+    while True:
+        c.check_msg()
+        time.sleep(1)
 
 
 # period 延时 毫秒
@@ -25,10 +157,10 @@ def b_link(t):
 
 
 def toggle():
-    if led_pin.value():
-        led_pin.value(0)
+    if LED.value():
+        LED.value(0)
     else:
-        led_pin.value(1)
+        LED.value(1)
 
 
 # 重置
@@ -56,8 +188,10 @@ if 'config.py' in file_list:
 # 网络配置成功
 if net_state:
     print('every thin is ok !')
-    b_link(2000)
-    pass
+    # 停止blink
+    tim.deinit()
+    # 执行代码
+    run_client()
 # 网络配置未完成
 else:
     print('config state.')
