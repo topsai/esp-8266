@@ -28,6 +28,12 @@ color = (0, 0, 0)
 for i in range(12):
     np[i] = color
 np.write()
+net_state = False
+# # 初始化LED
+# led_pin = Pin(2, Pin.OUT, value=1)
+
+tim = Timer(-1)
+print("初始化")
 
 # 每个MQTT的客户端应该使用一个唯一的client_id
 """
@@ -88,9 +94,6 @@ class option:
         np.write()
 
 
-opt = option()
-
-
 def sub_cb(topic, msg):
     global c
     print((topic, msg))
@@ -129,78 +132,63 @@ def run_client():
         c.disconnect()
 
 
-net_state = False
-# # 初始化LED
-# led_pin = Pin(2, Pin.OUT, value=1)
-
-tim = Timer(-1)
-print("初始化")
+if __name__ == '__main__':
+    opt = option()
 
 
-def mymqtt():
-    def sub_cb(topic, msg):  # 回调函数，收到服务器消息后会调用这个函数
-        print(topic, msg)
-
-    c = MQTTClient("umqtt_client", "test.mosquitto.org")  # 建立一个MQTT客户端
-    c.set_callback(sub_cb)  # 设置回调函数
-    c.connect()  # 建立连接
-    c.subscribe(b"ledctl")  # 监控ledctl这个通道，接收控制命令
-    while True:
-        c.check_msg()
-        time.sleep(1)
+    def b_link(t):  # period 延时 毫秒
+        # 1000 初始化；  100 配置wifi ； 500 ap配置模式； 2000 正常
+        tim.init(period=t, mode=Timer.PERIODIC, callback=lambda t: toggle())
 
 
-# period 延时 毫秒
-def b_link(t):
-    # 1000 初始化；  100 配置wifi ； 500 ap配置模式； 2000 正常
-    tim.init(period=t, mode=Timer.PERIODIC, callback=lambda t: toggle())
+    def toggle():
+        if LED.value():
+            LED.value(0)
+        else:
+            LED.value(1)
 
 
-def toggle():
-    if LED.value():
-        LED.value(0)
+    def init_wifi():  # 重置
+        try:
+            os.remove('config.py')
+        except:
+            pass
+        machine.reset()
+
+
+    b_link(1000)
+    print('init - blink - 1000')
+    # 判断是否存在wifi账号密码配置文件
+    file_list = os.listdir()
+    print(file_list)
+    if 'config.py' in file_list:
+        import config
+
+        if config.SSID and config.PWD:
+            print('have config ,action conn wifi.....')
+            b_link(100)
+            net_state = wifi_config.wifi(config.SSID, config.PWD)
+
+    # 网络配置成功
+    if net_state:
+        print('every thin is ok !')
+        # 停止blink
+        tim.deinit()
+        # 执行代码
+        while True:
+            try:
+                run_client()
+            except:
+                pass
+    # 网络配置未完成
     else:
-        LED.value(1)
-
-
-# 重置
-def init_wifi():
-    try:
-        os.remove('config.py')
-    except:
-        pass
-    machine.reset()
-
-
-b_link(1000)
-print('init - blink - 1000')
-# 判断是否存在wifi账号密码配置文件
-file_list = os.listdir()
-print(file_list)
-if 'config.py' in file_list:
-    import config
-
-    if config.SSID and config.PWD:
-        print('have config ,action conn wifi.....')
-        b_link(100)
-        net_state = wifi_config.wifi(config.SSID, config.PWD)
-
-# 网络配置成功
-if net_state:
-    print('every thin is ok !')
-    # 停止blink
-    tim.deinit()
-    # 执行代码
-    run_client()
-# 网络配置未完成
-else:
-    print('config state.')
-    b_link(500)
-    try:
-        os.remove('config.py')
-    except:
-        pass
-    # 进入 ap 模式
-    wifi_config.ap(True)
-    # 配置 wifi
-    wifi_config.web_server()
+        print('config state.')
+        b_link(500)
+        try:
+            os.remove('config.py')
+        except:
+            pass
+        # 进入 ap 模式
+        wifi_config.ap(True)
+        # 配置 wifi
+        wifi_config.web_server()
