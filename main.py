@@ -43,11 +43,10 @@ state_topic : command_topic + 'State'
 """
 
 CLIENT_ID = ubinascii.hexlify(machine.unique_id())
-command_topic = b"home-assistant/arduino1/laserLight"
-state_topic = b"home-assistant/arduino1/laserLightState"
-s = "asas"
-rgbstate_topic = b"home/rgbState"
+
 rgb_command_topic = b"home/rgb"
+switch_command_topic = b"home/switch"
+sensor_topic = b"office/sensor1"
 ends = '_command_topic'
 
 # 定义于MQTT代理服务器的连接信息
@@ -55,11 +54,6 @@ CONFIG = {
     "broker": "10.0.0.13",
     "mqtt_user": "homeassistant",
     "mqtt_password": "hachina",
-    "mqtt_topic_command": b"hachina/hardware/led01/switch",
-    "mqtt_topic_commands": b"hachina/hardware/led01/state",
-    "s": b"asas",
-    "ss": b"123",
-    "dht11_state": b"home-assistant/window/contact",
 }
 
 
@@ -93,6 +87,15 @@ class option:
             np[i] = color
         np.write()
 
+    def switch(self, msg):
+        # msg = b'{"state": "ON"}'
+        if msg == b"ON":
+            print('switch on')
+            LED.value(0)
+        else:
+            print('switch off')
+            LED.value(1)
+
 
 def sub_cb(topic, msg):
     global c
@@ -106,8 +109,28 @@ def sub_cb(topic, msg):
             fun = getattr(opt, fun)
         fun(msg)
         c.publish(topic + b"State", msg)
-    except:
-        pass
+    except Exception as e:
+        print(e)
+
+
+def b_link(t):  # period 延时 毫秒
+    # 1000 初始化；  100 配置wifi ； 500 ap配置模式； 2000 正常
+    tim.init(period=t, mode=Timer.PERIODIC, callback=lambda t: toggle())
+
+
+def toggle():
+    if LED.value():
+        LED.value(0)
+    else:
+        LED.value(1)
+
+
+def init_wifi():  # 重置
+    try:
+        os.remove('config.py')
+    except Exception as e:
+        print(e)
+    machine.reset()
 
 
 def run_client():
@@ -119,12 +142,12 @@ def run_client():
     # 连接MQTT代理服务器
     c.connect()
     # 订阅命令信息
-    c.subscribe(command_topic)
-    c.subscribe(s)
     c.subscribe(rgb_command_topic)
-    tim.init(period=5000, mode=Timer.PERIODIC, callback=lambda t: c.publish("office/sensor1", opt.get_temp()))
+    c.subscribe(switch_command_topic)
+    c.publish(rgb_command_topic, b'{"state": "OFF"}')
+    c.publish(switch_command_topic, b'OFF')
+    tim.init(period=5000, mode=Timer.PERIODIC, callback=lambda t: c.publish(sensor_topic, opt.get_temp()))
     # c.subscribe(CONFIG["dht11_state"])
-    print("Connected to %s, subscribed to %s topic" % (CONFIG["broker"], CONFIG["mqtt_topic_command"]))
     try:
         while True:
             c.wait_msg()
@@ -134,27 +157,6 @@ def run_client():
 
 if __name__ == '__main__':
     opt = option()
-
-
-    def b_link(t):  # period 延时 毫秒
-        # 1000 初始化；  100 配置wifi ； 500 ap配置模式； 2000 正常
-        tim.init(period=t, mode=Timer.PERIODIC, callback=lambda t: toggle())
-
-
-    def toggle():
-        if LED.value():
-            LED.value(0)
-        else:
-            LED.value(1)
-
-
-    def init_wifi():  # 重置
-        try:
-            os.remove('config.py')
-        except:
-            pass
-        machine.reset()
-
 
     b_link(1000)
     print('init - blink - 1000')
@@ -178,16 +180,26 @@ if __name__ == '__main__':
         while True:
             try:
                 run_client()
-            except:
-                pass
+            except Exception as e:
+                print(e)
+                tim.deinit()
+            finally:
+                tim.deinit()
+
+            # test network
+            net_state = wifi_config.wifi(config.SSID, config.PWD)
+
+            print('sleep...')
+            time.sleep(2)
+            print("sleep ok")
     # 网络配置未完成
     else:
         print('config state.')
         b_link(500)
         try:
             os.remove('config.py')
-        except:
-            pass
+        except Exception as e:
+            print(e)
         # 进入 ap 模式
         wifi_config.ap(True)
         # 配置 wifi
